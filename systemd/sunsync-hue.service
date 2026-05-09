@@ -1,0 +1,16 @@
+[Unit]
+Description=Sunsync Hue daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/sunsync-hue
+ExecStart=%h/sunsync-hue/.venv/bin/python %h/sunsync-hue/sunsync-hue.py run
+Restart=on-failure
+RestartSec=30s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
