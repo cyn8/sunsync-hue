@@ -57,14 +57,16 @@ class ComingHomeCoordinator:
             paired = self._events_are_paired_locked()
             queued = False
             already_running = self._transition_running
-            if paired and not self._transition_running:
-                self._transition_running = True
-                queued = True
-                threading.Thread(
-                    target=self._run_transition,
-                    name="sunsync-coming-home",
-                    daemon=True,
-                ).start()
+            if paired:
+                self._reset_paired_events_locked()
+                if not self._transition_running:
+                    self._transition_running = True
+                    queued = True
+                    threading.Thread(
+                        target=self._run_transition,
+                        name="sunsync-coming-home",
+                        daemon=True,
+                    ).start()
 
         logger.info(
             "coming home: recorded %s%s",
@@ -93,17 +95,17 @@ class ComingHomeCoordinator:
         window = timedelta(seconds=self.cfg.webhook.coming_home_window_seconds)
         return abs(self._last_arrival - self._last_motion) <= window
 
+    def _reset_paired_events_locked(self) -> None:
+        self._last_arrival = None
+        self._last_motion = None
+
     def _run_transition(self) -> None:
-        success = False
         try:
-            success = self._evaluate_and_transition()
+            self._evaluate_and_transition()
         except Exception:
             logger.exception("coming home: evaluation failed unexpectedly")
         finally:
             with self._event_lock:
-                if success:
-                    self._last_arrival = None
-                    self._last_motion = None
                 self._transition_running = False
 
     def _evaluate_and_transition(self) -> bool:

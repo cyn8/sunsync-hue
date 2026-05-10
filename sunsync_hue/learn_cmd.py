@@ -16,9 +16,16 @@ from sunsync_hue.snapshot import snapshot_room
 logger = logging.getLogger(__name__)
 
 
-def run(room: str | None = None) -> None:
+def run(room: str | None = None, scene: str | None = None) -> None:
     cfg = cfg_mod.load()
     st = state_mod.load()
+    scene_names = _selected_scenes(scene)
+    if scene_names is not None and room is None:
+        typer.secho(
+            "A room is required when using --scene.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
 
     with BridgeClient(cfg.bridge.ip, cfg.bridge.app_key) as bridge:
         rooms = bridge.get_rooms()
@@ -39,7 +46,7 @@ def run(room: str | None = None) -> None:
         room_by_name: dict[str, Room] = {r.name: r for r in rooms_with_lights}
 
         if room is not None:
-            _learn_single(room, bridge, room_by_name, rooms, cfg, st)
+            _learn_single(room, bridge, room_by_name, rooms, cfg, st, scene_names)
             return
 
         # 1. Pick rooms to monitor (prefill from current config)
@@ -61,7 +68,7 @@ def run(room: str | None = None) -> None:
 
         # 2. For each room x scene, capture state.
         for room_name in selected:
-            _learn_one_room(bridge, room_by_name[room_name], cfg, st)
+            _learn_one_room(bridge, room_by_name[room_name], cfg, st, scene_names)
 
         # 3. Drop any previously-monitored rooms the user deselected.
         for known in list(st.rooms.keys()):
@@ -80,6 +87,20 @@ def run(room: str | None = None) -> None:
     )
 
 
+def _selected_scenes(scene: str | None) -> tuple[str, ...] | None:
+    if scene is None:
+        return None
+    scene = scene.strip()
+    for valid_scene in SCENE_NAMES:
+        if scene.lower() == valid_scene.lower():
+            return (valid_scene,)
+    typer.secho(
+        f"Unknown scene {scene!r}. Valid: {', '.join(SCENE_NAMES)}",
+        fg=typer.colors.RED,
+    )
+    raise typer.Exit(code=1)
+
+
 def _learn_single(
     room_name: str,
     bridge: BridgeClient,
@@ -87,6 +108,7 @@ def _learn_single(
     all_rooms: list[Room],
     cfg: cfg_mod.Config,
     st: state_mod.State,
+    scene_names: tuple[str, ...] | None,
 ) -> None:
     """Single-room re-learn. Validates, optionally adds to monitored, captures scenes."""
     if room_name not in room_by_name:
@@ -116,15 +138,17 @@ def _learn_single(
             raise typer.Exit(code=0)
         newly_monitored = True
 
-    _learn_one_room(bridge, room_by_name[room_name], cfg, st)
+    _learn_one_room(bridge, room_by_name[room_name], cfg, st, scene_names)
 
     if newly_monitored:
         cfg.rooms.monitored.append(room_name)
 
     cfg_mod.save(cfg)
     state_mod.save(st)
+    detail = f" {scene_names[0]} for" if scene_names is not None else ""
     typer.secho(
-        f"\nDone. Updated {room_name}. Run `sunsync-hue check` to verify.",
+        f"\nDone. Updated{detail} {room_name}. "
+        "Run `sunsync-hue check` to verify.",
         fg=typer.colors.GREEN,
     )
 
@@ -134,59 +158,65 @@ def _learn_one_room(
     room: Room,
     cfg: cfg_mod.Config,
     st: state_mod.State,
+    scene_names: tuple[str, ...] | None = None,
 ) -> None:
-    """Run the per-room flow: light-exclusion checkbox + 4-scene capture, write state."""
+    """Run the per-room flow and write state."""
     room_name = room.name
     typer.secho(f"\n=== {room_name} ===", fg=typer.colors.CYAN, bold=True)
 
-    # Per-room: pick which lights to include (uncheck to exclude).
     lights_in_room = bridge.get_room_lights(room)
     current_excluded = cfg.rooms.excluded.get(room_name, [])
-    light_choices = [
-        questionary.Choice(
-            title=ls.name,
-            value=ls.name,
-            checked=(ls.name not in current_excluded),
-        )
-        for ls in lights_in_room.values()
-    ]
-    included_names: list[str] | None = questionary.checkbox(
-        f"Which lights in '{room_name}' should sunsync-hue manage? "
-        "(uncheck to exclude)",
-        choices=light_choices,
-    ).ask()
-    if included_names is None:
-        typer.echo("Aborted.")
-        raise typer.Exit(code=1)
-    included_set = set(included_names)
-    new_excluded = [
-        ls.name for ls in lights_in_room.values()
-        if ls.name not in included_set
-    ]
-    if new_excluded:
-        cfg.rooms.excluded[room_name] = new_excluded
-        typer.echo(f"  excluding: {', '.join(new_excluded)}")
+    if scene_names is None:
+        # Per-room: pick which lights to include (uncheck to exclude).
+        light_choices = [
+            questionary.Choice(
+                title=ls.name,
+                value=ls.name,
+                checked=(ls.name not in current_excluded),
+            )
+            for ls in lights_in_room.values()
+        ]
+        included_names: list[str] | None = questionary.checkbox(
+            f"Which lights in '{room_name}' should sunsync-hue manage? "
+            "(uncheck to exclude)",
+            choices=light_choices,
+        ).ask()
+        if included_names is None:
+            typer.echo("Aborted.")
+            raise typer.Exit(code=1)
+        included_set = set(included_names)
+        new_excluded = [
+            ls.name for ls in lights_in_room.values()
+            if ls.name not in included_set
+        ]
+        if new_excluded:
+            cfg.rooms.excluded[room_name] = new_excluded
+            typer.echo(f"  excluding: {', '.join(new_excluded)}")
+        else:
+            cfg.rooms.excluded.pop(room_name, None)
     else:
-        cfg.rooms.excluded.pop(room_name, None)
+        new_excluded = current_excluded
+        if new_excluded:
+            typer.echo(f"  keeping excluded lights: {', '.join(new_excluded)}")
 
     existing = st.rooms.get(room_name)
     scenes_so_far = (
         dict(existing.scenes) if existing and existing.scenes else {}
     )
 
-    for scene_name in SCENE_NAMES:
+    for scene_name in scene_names or SCENE_NAMES:
         already = scene_name in scenes_so_far
         prompt = (
             f"Set up '{room_name}' for {scene_name} in your Hue app, "
             "then press Enter to capture"
         )
-        if already:
+        if already and scene_names is None:
             prompt += "  (Enter to recapture, 's' to skip)"
         response = questionary.text(prompt).ask()
         if response is None:
             typer.echo("Aborted.")
             raise typer.Exit(code=1)
-        if already and response.strip().lower() == "s":
+        if already and scene_names is None and response.strip().lower() == "s":
             typer.echo(f"  → kept existing {scene_name}")
             continue
 

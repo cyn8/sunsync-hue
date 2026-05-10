@@ -52,7 +52,7 @@ So manually selecting Day via the Hue app keeps the room aligned; the next After
 | Command | Purpose |
 |---|---|
 | `python3 ./sunsync-hue.py setup` | Discover bridge on LAN, prompt for link button press, save app key. |
-| `python3 ./sunsync-hue.py learn [<room>]` | Interactively snapshot per-room scenes. With a room name, only that room is re-learned (other rooms untouched). |
+| `python3 ./sunsync-hue.py learn [<room>] [--scene <scene>]` | Interactively snapshot per-room scenes. With a room name, only that room is re-learned. With `--scene`, only that scene is re-learned for that room. |
 | `python3 ./sunsync-hue.py check` | Run the match check for every monitored room and print verdicts. Doesn't apply anything. |
 | `python3 ./sunsync-hue.py apply <scene> [--room <name>] [--force]` | Manual override. Without `--force`, still respects the match check. |
 | `python3 ./sunsync-hue.py run [--dry-run] [--catch-up]` | The daemon. `--dry-run` logs would-be apply actions without writing. |
@@ -79,6 +79,12 @@ python3 ./sunsync-hue.py include "Living Room" "Lava Lamp"
 Exclusions live in `config.toml` under `[rooms.excluded]` and are identified
 by the light's Hue name — if you rename a bulb in the Hue app, the exclusion
 silently lapses and the daemon starts managing it again.
+
+To re-learn just one room/scene snapshot and keep the room's other scenes:
+
+```bash
+python3 ./sunsync-hue.py learn "Bedroom" --scene Day
+```
 
 ## Coming home
 

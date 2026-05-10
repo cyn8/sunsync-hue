@@ -124,11 +124,17 @@ def learn(
         None,
         help="Room name to re-learn. If omitted, opens the interactive picker for all rooms.",
     ),
+    scene: str = typer.Option(
+        None,
+        "--scene",
+        "-s",
+        help="Only re-learn one scene for the selected room.",
+    ),
 ) -> None:
     """Interactively capture per-room scene snapshots."""
     from sunsync_hue.learn_cmd import run as run_learn
 
-    run_learn(room=room)
+    run_learn(room=room, scene=scene)
 
 
 @app.command()
