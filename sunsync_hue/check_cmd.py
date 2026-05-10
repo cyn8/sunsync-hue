@@ -7,6 +7,7 @@ import typer
 from sunsync_hue import config as cfg_mod
 from sunsync_hue import state as state_mod
 from sunsync_hue.bridge import BridgeClient
+from sunsync_hue.exclusion import excluded_ids_for_room, filter_scenes
 from sunsync_hue.matcher import room_matches_any_scene
 from sunsync_hue.snapshot import snapshot_room
 
@@ -39,9 +40,23 @@ def run() -> None:
                 )
                 continue
 
-            current = snapshot_room(bridge.get_room_lights(room))
+            room_lights = bridge.get_room_lights(room)
+            excluded_ids = excluded_ids_for_room(
+                room_lights, cfg.rooms.excluded.get(room_name, [])
+            )
+            current = {
+                lid: snap for lid, snap in snapshot_room(room_lights).items()
+                if lid not in excluded_ids
+            }
+            managed_scenes = filter_scenes(room_state.scenes, excluded_ids)
+            if not any(managed_scenes.values()):
+                typer.secho(
+                    f"  {room_name}: SKIP — every light in this room is excluded",
+                    fg=typer.colors.YELLOW,
+                )
+                continue
             matched = room_matches_any_scene(
-                current, room_state.scenes, cfg.matching, room_name=room_name
+                current, managed_scenes, cfg.matching, room_name=room_name
             )
             if matched is None:
                 typer.secho(

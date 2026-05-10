@@ -119,11 +119,16 @@ def setup(
 
 
 @app.command()
-def learn() -> None:
+def learn(
+    room: str = typer.Argument(
+        None,
+        help="Room name to re-learn. If omitted, opens the interactive picker for all rooms.",
+    ),
+) -> None:
     """Interactively capture per-room scene snapshots."""
     from sunsync_hue.learn_cmd import run as run_learn
 
-    run_learn()
+    run_learn(room=room)
 
 
 @app.command()
@@ -185,6 +190,28 @@ def forget(
     from sunsync_hue.forget_cmd import run as run_forget
 
     run_forget(room)
+
+
+@app.command()
+def exclude(
+    room: str = typer.Argument(..., help="Room the light belongs to."),
+    light: str = typer.Argument(..., help="Hue light name to exclude."),
+) -> None:
+    """Exclude a light from sunsync-hue's management for a room."""
+    from sunsync_hue.exclude_cmd import run_exclude
+
+    run_exclude(room, light)
+
+
+@app.command()
+def include(
+    room: str = typer.Argument(..., help="Room the light belongs to."),
+    light: str = typer.Argument(..., help="Hue light name to re-include."),
+) -> None:
+    """Re-include a previously excluded light."""
+    from sunsync_hue.exclude_cmd import run_include
+
+    run_include(room, light)
 
 
 def main() -> None:

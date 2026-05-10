@@ -25,6 +25,7 @@ def apply_scene_to_room(
     state: State,
     cfg: Config,
     dry_run: bool = False,
+    excluded_ids: set[str] | frozenset[str] = frozenset(),
 ) -> None:
     """Push a learned snapshot to the room and update the baseline.
 
@@ -37,13 +38,16 @@ def apply_scene_to_room(
     re-read state as the new baseline. The re-read uses bridge-reported values
     so subsequent match checks compare in the same coordinate system.
     """
+    managed_snap = {
+        lid: snap for lid, snap in scene_snap.items() if lid not in excluded_ids
+    }
     logger.info(
         "%s: applying %r to %d light(s) (transition %dms)%s",
-        room.name, scene_name, len(scene_snap), transition_ms,
+        room.name, scene_name, len(managed_snap), transition_ms,
         " [DRY-RUN]" if dry_run else "",
     )
 
-    for light_id, expected in scene_snap.items():
+    for light_id, expected in managed_snap.items():
         if expected.on:
             payload_kwargs = {
                 "on": True,
@@ -78,7 +82,10 @@ def apply_scene_to_room(
     time.sleep(SETTLE_SECONDS)
     try:
         lights = bridge.get_room_lights(room)
-        new_baseline = snapshot_room(lights)
+        managed_lights = {
+            lid: ls for lid, ls in lights.items() if lid not in excluded_ids
+        }
+        new_baseline = snapshot_room(managed_lights)
     except Exception as e:
         logger.warning(
             "%s: re-snapshot after apply failed: %s — baseline not updated",
@@ -92,9 +99,14 @@ def apply_scene_to_room(
         state.rooms[room.name] = room_state
 
     # Update the baseline for the scene we just applied — this is what future
-    # match checks will compare against.
+    # match checks will compare against. Excluded lights aren't re-snapshotted,
+    # so preserve their existing entries (lets un-excluding restore tracking
+    # without a re-learn).
     if new_baseline is not None:
-        room_state.scenes[scene_name] = new_baseline
+        prior = room_state.scenes.get(scene_name, {})
+        merged = {lid: snap for lid, snap in prior.items() if lid in excluded_ids}
+        merged.update(new_baseline)
+        room_state.scenes[scene_name] = merged
 
     tz = ZoneInfo(cfg.location.timezone)
     room_state.last_applied = LastApplied(

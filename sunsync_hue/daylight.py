@@ -5,11 +5,17 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from astral import LocationInfo
-from astral.sun import dusk, sun
+from astral.sun import sun
 
 from sunsync_hue.config import LocationConfig, ScheduleConfig
 
 SCENE_ORDER = ("Day", "Afternoon", "Evening", "Night")
+
+
+def previous_scene(scene: str) -> str:
+    """The scene that should precede `scene` in chronological order (wraps Day←Night)."""
+    i = SCENE_ORDER.index(scene)
+    return SCENE_ORDER[(i - 1) % len(SCENE_ORDER)]
 
 
 @dataclass
@@ -45,33 +51,15 @@ def compute_events(
     sunrise = s["sunrise"]
     sunset = s["sunset"]
 
-    # Day
     day_at = sunrise
+    afternoon_at = sunset
+    evening_at = datetime.combine(on_date, schedule.evening_local_time, tz)
+    night_at = datetime.combine(on_date, schedule.night_local_time, tz)
 
-    # Afternoon — sunset minus configurable offset
-    afternoon_at = sunset - timedelta(minutes=schedule.afternoon_offset_minutes)
-
-    # Evening
-    if schedule.evening_event == "civil_dusk":
-        evening_at = s["dusk"]  # astral's "dusk" defaults to civil (depression=6)
-    else:  # "sunset"
-        evening_at = sunset
-
-    # Night — astronomical_dusk (depression=18) or civil_dusk or sunset, capped
-    if schedule.night_event == "astronomical_dusk":
-        try:
-            night_at = dusk(info.observer, date=on_date, tzinfo=tz, depression=18)
-        except ValueError:
-            # At extreme latitudes/dates astral can fail; fall back to the cap.
-            night_at = datetime.combine(on_date, schedule.night_latest_local_time, tz)
-    elif schedule.night_event == "civil_dusk":
-        night_at = dusk(info.observer, date=on_date, tzinfo=tz, depression=6)
-    else:  # "sunset"
-        night_at = sunset
-
-    cap = datetime.combine(on_date, schedule.night_latest_local_time, tz)
-    if night_at > cap:
-        night_at = cap
+    # If night_local_time is at/before evening (e.g. 01:00 vs 22:00) it belongs
+    # to the next morning, after evening has fired.
+    if night_at <= evening_at:
+        night_at = night_at + timedelta(days=1)
 
     events = [
         DaylightEvent("Day", day_at),

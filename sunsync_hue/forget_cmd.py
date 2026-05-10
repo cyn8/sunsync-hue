@@ -12,15 +12,17 @@ def run(room: str) -> None:
 
     in_config = room in cfg.rooms.monitored
     in_state = room in st.rooms
+    in_excluded = room in cfg.rooms.excluded
 
-    if not in_config and not in_state:
+    if not in_config and not in_state and not in_excluded:
         typer.secho(
             f"Room {room!r} is not currently monitored.", fg=typer.colors.YELLOW
         )
         raise typer.Exit(code=1)
 
-    if in_config:
+    if in_config or in_excluded:
         cfg.rooms.monitored = [r for r in cfg.rooms.monitored if r != room]
+        cfg.rooms.excluded.pop(room, None)
         cfg_mod.save(cfg)
         typer.echo(f"Removed {room!r} from monitored rooms in config.")
 

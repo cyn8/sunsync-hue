@@ -13,8 +13,10 @@ from sunsync_hue.bridge import BridgeClient, BridgeError
 from sunsync_hue.daylight import (
     compute_events,
     current_scene_for,
+    previous_scene,
     upcoming_events,
 )
+from sunsync_hue.exclusion import excluded_ids_for_room, filter_scenes
 from sunsync_hue.matcher import room_matches_any_scene
 from sunsync_hue.snapshot import snapshot_room
 
@@ -51,10 +53,10 @@ def run(*, dry_run: bool, catch_up: bool) -> None:
         ", ".join(cfg.rooms.monitored),
     )
     logger.info(
-        "transition: %dms; afternoon offset: %dmin; night cap: %s",
+        "transition: %dms; day=sunrise, afternoon=sunset, evening=%s, night=%s",
         cfg.transitions.duration_ms,
-        cfg.schedule.afternoon_offset_minutes,
-        cfg.schedule.night_latest_local_time.strftime("%H:%M"),
+        cfg.schedule.evening_local_time.strftime("%-I:%M %p"),
+        cfg.schedule.night_local_time.strftime("%-I:%M %p"),
     )
 
     today_events = compute_events(
@@ -63,7 +65,7 @@ def run(*, dry_run: bool, catch_up: bool) -> None:
     logger.info(
         "today's events: %s",
         ", ".join(
-            f"{e.scene}@{e.when.strftime('%H:%M')}" for e in today_events
+            f"{e.scene}@{e.when.strftime('%-I:%M %p')}" for e in today_events
         ),
     )
 
@@ -92,7 +94,7 @@ def run(*, dry_run: bool, catch_up: bool) -> None:
         logger.info(
             "next trigger: %s at %s (in %s)",
             next_event.scene,
-            next_event.when.strftime("%Y-%m-%d %H:%M:%S %Z"),
+            next_event.when.strftime("%Y-%m-%d %-I:%M:%S %p %Z"),
             _human_duration(wait),
         )
 
@@ -143,25 +145,53 @@ def _do_tick(
                     continue
 
                 try:
-                    current = snapshot_room(bridge.get_room_lights(r))
+                    room_lights = bridge.get_room_lights(r)
                 except BridgeError as e:
                     logger.warning("%s: bridge read failed: %s", room_name, e)
                     continue
 
-                matched = room_matches_any_scene(
-                    current, room_state.scenes, cfg.matching, room_name=room_name
+                excluded_ids = excluded_ids_for_room(
+                    room_lights, cfg.rooms.excluded.get(room_name, [])
                 )
-                if matched is None:
+                managed_scenes = filter_scenes(room_state.scenes, excluded_ids)
+                if not managed_scenes.get(scene):
                     logger.info(
-                        "%s: SKIP — state does not match any learned scene "
-                        "(manual override detected)",
+                        "%s: SKIP — every light in this room is excluded",
                         room_name,
+                    )
+                    continue
+                current = {
+                    lid: snap for lid, snap in snapshot_room(room_lights).items()
+                    if lid not in excluded_ids
+                }
+
+                prev = previous_scene(scene)
+                if not managed_scenes.get(prev):
+                    logger.info(
+                        "%s: SKIP — previous scene %r not learned for this room",
+                        room_name, prev,
+                    )
+                    continue
+
+                current_match = room_matches_any_scene(
+                    current, managed_scenes, cfg.matching, room_name=room_name
+                )
+                if current_match != prev:
+                    on = (
+                        f"on {current_match!r}"
+                        if current_match
+                        else "on no learned scene"
+                    )
+                    logger.info(
+                        "%s: SKIP — %s, not previous scene %r "
+                        "(manual override or skipped transition)",
+                        room_name, on, prev,
                     )
                     continue
 
                 logger.info(
-                    "%s: matched scene %r → applying %r",
-                    room_name, matched, scene,
+                    "%s: on previous scene %r → applying %r",
+                    room_name, prev, scene,
                 )
                 apply_scene_to_room(
                     bridge=bridge,
@@ -172,6 +202,7 @@ def _do_tick(
                     state=st,
                     cfg=cfg,
                     dry_run=dry_run,
+                    excluded_ids=excluded_ids,
                 )
                 any_changed = True
     except BridgeError as e:

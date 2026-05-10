@@ -47,10 +47,10 @@ class TransitionConfig:
 
 @dataclass
 class ScheduleConfig:
-    afternoon_offset_minutes: int = 90
-    evening_event: str = "sunset"
-    night_event: str = "astronomical_dusk"
-    night_latest_local_time: time = time(22, 30)
+    evening_local_time: time = time(22, 0)
+    # Treated as next-day if it falls at-or-before evening_local_time
+    # (e.g. 01:00 means 01:00 the following morning).
+    night_local_time: time = time(1, 0)
 
 
 @dataclass
@@ -63,6 +63,11 @@ class MatchingConfig:
 @dataclass
 class RoomsConfig:
     monitored: list[str] = field(default_factory=list)
+    # Per-room exclusion lists, keyed by room name. Light identification is
+    # by Hue light name; if the user renames a light in the Hue app the
+    # exclusion silently lapses (intended — we resolve names to IDs fresh
+    # on every command).
+    excluded: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -117,11 +122,11 @@ def parse(raw: dict) -> Config:
 
     sched_t = raw.get("schedule", {})
     schedule = ScheduleConfig(
-        afternoon_offset_minutes=int(sched_t.get("afternoon_offset_minutes", 90)),
-        evening_event=str(sched_t.get("evening_event", "sunset")),
-        night_event=str(sched_t.get("night_event", "astronomical_dusk")),
-        night_latest_local_time=_parse_time_str(
-            sched_t.get("night_latest_local_time", "22:30"), "schedule"
+        evening_local_time=_parse_time_str(
+            sched_t.get("evening_local_time", "22:00"), "schedule"
+        ),
+        night_local_time=_parse_time_str(
+            sched_t.get("night_local_time", "01:00"), "schedule"
         ),
     )
 
@@ -136,19 +141,21 @@ def parse(raw: dict) -> Config:
     monitored = rooms_t.get("monitored", [])
     if not isinstance(monitored, list) or not all(isinstance(r, str) for r in monitored):
         raise ConfigError("[rooms].monitored must be a list of strings")
-    rooms = RoomsConfig(monitored=list(monitored))
 
-    if schedule.evening_event not in ("sunset", "civil_dusk"):
-        raise ConfigError(
-            f"[schedule].evening_event must be 'sunset' or 'civil_dusk', "
-            f"got {schedule.evening_event!r}"
-        )
-    if schedule.night_event not in ("astronomical_dusk", "civil_dusk", "sunset"):
-        raise ConfigError(
-            f"[schedule].night_event must be one of "
-            f"'astronomical_dusk' | 'civil_dusk' | 'sunset', "
-            f"got {schedule.night_event!r}"
-        )
+    excluded_t = rooms_t.get("excluded", {})
+    if not isinstance(excluded_t, dict):
+        raise ConfigError("[rooms.excluded] must be a table mapping room → list of light names")
+    excluded: dict[str, list[str]] = {}
+    for room_name, lights in excluded_t.items():
+        if not isinstance(lights, list) or not all(isinstance(n, str) for n in lights):
+            raise ConfigError(
+                f"[rooms.excluded].{room_name!r} must be a list of light name strings"
+            )
+        if lights:
+            excluded[room_name] = list(lights)
+
+    rooms = RoomsConfig(monitored=list(monitored), excluded=excluded)
+
     if transitions.duration_ms < 0 or transitions.duration_ms > 600_000:
         raise ConfigError(
             f"[transitions].duration_ms out of range (0–600000): {transitions.duration_ms}"
@@ -192,11 +199,10 @@ def render(cfg: Config) -> str:
     lines.append(f"duration_ms = {cfg.transitions.duration_ms}")
     lines.append("")
     lines.append("[schedule]")
-    lines.append(f"afternoon_offset_minutes = {cfg.schedule.afternoon_offset_minutes}")
-    lines.append(f'evening_event = "{cfg.schedule.evening_event}"')
-    lines.append(f'night_event = "{cfg.schedule.night_event}"')
-    nlt = cfg.schedule.night_latest_local_time
-    lines.append(f'night_latest_local_time = "{nlt.hour:02d}:{nlt.minute:02d}"')
+    elt = cfg.schedule.evening_local_time
+    nlt = cfg.schedule.night_local_time
+    lines.append(f'evening_local_time = "{elt.hour:02d}:{elt.minute:02d}"')
+    lines.append(f'night_local_time = "{nlt.hour:02d}:{nlt.minute:02d}"')
     lines.append("")
     lines.append("[matching]")
     lines.append(f"brightness_tolerance = {cfg.matching.brightness_tolerance}")
@@ -207,6 +213,13 @@ def render(cfg: Config) -> str:
     monitored = ", ".join(f'"{r}"' for r in cfg.rooms.monitored)
     lines.append(f"monitored = [{monitored}]")
     lines.append("")
+    excluded_rooms = {r: ls for r, ls in cfg.rooms.excluded.items() if ls}
+    if excluded_rooms:
+        lines.append("[rooms.excluded]")
+        for room_name in sorted(excluded_rooms):
+            lights = ", ".join(f'"{n}"' for n in excluded_rooms[room_name])
+            lines.append(f'"{room_name}" = [{lights}]')
+        lines.append("")
     return "\n".join(lines)
 
 

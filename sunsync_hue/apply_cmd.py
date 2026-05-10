@@ -9,6 +9,8 @@ from sunsync_hue import state as state_mod
 from sunsync_hue.apply import apply_scene_to_room
 from sunsync_hue.bridge import BridgeClient
 from sunsync_hue.config import SCENE_NAMES
+from sunsync_hue.daylight import previous_scene
+from sunsync_hue.exclusion import excluded_ids_for_room, filter_scenes
 from sunsync_hue.matcher import room_matches_any_scene
 from sunsync_hue.snapshot import snapshot_room
 
@@ -63,14 +65,42 @@ def run(scene: str, room: str | None, force: bool, dry_run: bool) -> None:
                 )
                 continue
 
-            if not force:
-                current = snapshot_room(bridge.get_room_lights(r))
-                matched = room_matches_any_scene(
-                    current, room_state.scenes, cfg.matching, room_name=room_name
+            room_lights = bridge.get_room_lights(r)
+            excluded_ids = excluded_ids_for_room(
+                room_lights, cfg.rooms.excluded.get(room_name, [])
+            )
+            managed_scenes = filter_scenes(room_state.scenes, excluded_ids)
+            if not managed_scenes.get(scene):
+                typer.secho(
+                    f"  {room_name}: SKIP — every light in this room is excluded",
+                    fg=typer.colors.YELLOW,
                 )
-                if matched is None:
+                continue
+
+            if not force:
+                prev = previous_scene(scene)
+                if not managed_scenes.get(prev):
                     typer.secho(
-                        f"  {room_name}: SKIP — does not match any learned scene "
+                        f"  {room_name}: SKIP — previous scene {prev!r} not learned "
+                        "(use --force to override)",
+                        fg=typer.colors.YELLOW,
+                    )
+                    continue
+                managed_current = {
+                    lid: snap for lid, snap in snapshot_room(room_lights).items()
+                    if lid not in excluded_ids
+                }
+                current_match = room_matches_any_scene(
+                    managed_current, managed_scenes, cfg.matching, room_name=room_name
+                )
+                if current_match != prev:
+                    on = (
+                        f"on {current_match!r}"
+                        if current_match
+                        else "on no learned scene"
+                    )
+                    typer.secho(
+                        f"  {room_name}: SKIP — {on}, not previous scene {prev!r} "
                         "(use --force to override)",
                         fg=typer.colors.YELLOW,
                     )
@@ -85,6 +115,7 @@ def run(scene: str, room: str | None, force: bool, dry_run: bool) -> None:
                 state=st,
                 cfg=cfg,
                 dry_run=dry_run,
+                excluded_ids=excluded_ids,
             )
             any_changed = True
 

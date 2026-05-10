@@ -5,12 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/sunsync-hue
-ExecStart=%h/sunsync-hue/.venv/bin/python %h/sunsync-hue/sunsync-hue.py run
+User=cyn8
+Group=cyn8
+WorkingDirectory=/opt/sunsync-hue
+ExecStart=/opt/sunsync-hue/env/bin/python /opt/sunsync-hue/sunsync-hue.py run
 Restart=on-failure
 RestartSec=30s
 StandardOutput=journal
 StandardError=journal
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
