@@ -25,6 +25,13 @@ def run() -> None:
         f"({cfg.location.timezone})"
     )
     typer.echo(f"  transition: {cfg.transitions.duration_ms}ms")
+    webhook = (
+        f"enabled on {cfg.webhook.host}:{cfg.webhook.port} "
+        f"({cfg.webhook.coming_home_window_seconds}s coming-home window)"
+        if cfg.webhook.enabled
+        else "disabled"
+    )
+    typer.echo(f"  webhook:  {webhook}")
     typer.echo(
         f"  schedule: day at sunrise, afternoon at sunset, "
         f"evening {cfg.schedule.evening_local_time.strftime('%-I:%M %p')}, "

@@ -71,6 +71,14 @@ class RoomsConfig:
 
 
 @dataclass
+class WebhookConfig:
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = 8765
+    coming_home_window_seconds: int = 900
+
+
+@dataclass
 class Config:
     bridge: BridgeConfig
     location: LocationConfig
@@ -78,6 +86,7 @@ class Config:
     schedule: ScheduleConfig
     matching: MatchingConfig
     rooms: RoomsConfig
+    webhook: WebhookConfig
 
     @property
     def path(self) -> Path:
@@ -156,9 +165,27 @@ def parse(raw: dict) -> Config:
 
     rooms = RoomsConfig(monitored=list(monitored), excluded=excluded)
 
+    webhook_t = raw.get("webhook", {})
+    webhook = WebhookConfig(
+        enabled=bool(webhook_t.get("enabled", False)),
+        host=str(webhook_t.get("host", "0.0.0.0")),
+        port=int(webhook_t.get("port", 8765)),
+        coming_home_window_seconds=int(
+            webhook_t.get("coming_home_window_seconds", 900)
+        ),
+    )
+
     if transitions.duration_ms < 0 or transitions.duration_ms > 600_000:
         raise ConfigError(
             f"[transitions].duration_ms out of range (0–600000): {transitions.duration_ms}"
+        )
+    if webhook.port < 1 or webhook.port > 65535:
+        raise ConfigError(
+            f"[webhook].port out of range (1–65535): {webhook.port}"
+        )
+    if webhook.coming_home_window_seconds < 1:
+        raise ConfigError(
+            "[webhook].coming_home_window_seconds must be at least 1"
         )
 
     return Config(
@@ -168,6 +195,7 @@ def parse(raw: dict) -> Config:
         schedule=schedule,
         matching=matching,
         rooms=rooms,
+        webhook=webhook,
     )
 
 
@@ -220,6 +248,14 @@ def render(cfg: Config) -> str:
             lights = ", ".join(f'"{n}"' for n in excluded_rooms[room_name])
             lines.append(f'"{room_name}" = [{lights}]')
         lines.append("")
+    lines.append("[webhook]")
+    lines.append(f"enabled = {str(cfg.webhook.enabled).lower()}")
+    lines.append(f'host = "{cfg.webhook.host}"')
+    lines.append(f"port = {cfg.webhook.port}")
+    lines.append(
+        f"coming_home_window_seconds = {cfg.webhook.coming_home_window_seconds}"
+    )
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -245,4 +281,5 @@ def default_for_pairing(
         schedule=ScheduleConfig(),
         matching=MatchingConfig(),
         rooms=RoomsConfig(),
+        webhook=WebhookConfig(),
     )

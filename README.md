@@ -80,6 +80,41 @@ Exclusions live in `config.toml` under `[rooms.excluded]` and are identified
 by the light's Hue name — if you rename a bulb in the Hue app, the exclusion
 silently lapses and the daemon starts managing it again.
 
+## Coming home
+
+`sunsync-hue` can expose a small LAN webhook for HomeKit automations. It is
+disabled by default. Enable it in `~/.config/sunsync-hue/config.toml`:
+
+```toml
+[webhook]
+enabled = true
+host = "0.0.0.0"
+port = 8765
+coming_home_window_seconds = 900
+```
+
+Then restart the daemon and create two HomeKit automations that send HTTP POST
+requests to the machine running `sunsync-hue`:
+
+```text
+POST http://<sunsync-host>:8765/coming-home/arrival
+POST http://<sunsync-host>:8765/coming-home/motion
+```
+
+Use `/coming-home/arrival` for "when the first person arrives" and
+`/coming-home/motion` for the Hue motion sensor trigger. Request bodies are
+ignored, so an empty POST is fine. `GET /health` returns a basic health check.
+
+When both events occur within `coming_home_window_seconds` of each other, in
+either order, `sunsync-hue` checks every monitored room. If every managed,
+non-excluded light is off, it transitions all monitored rooms to the current
+clock scene using the normal transition duration. If any managed light is
+already on, a room cannot be read, or the current scene has not been learned,
+the coming-home transition is skipped.
+
+These endpoints use no app-level authentication. Keep the listener on a trusted
+LAN and do not expose it to the internet.
+
 ## Files
 
 - Config: `~/.config/sunsync-hue/config.toml`
