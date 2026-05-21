@@ -8,6 +8,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from sunsync_hue import config as cfg_mod
+from sunsync_hue import scenes as scenes_mod
 from sunsync_hue import state as state_mod
 from sunsync_hue.apply import apply_scene_to_room
 from sunsync_hue.bridge import BridgeClient, BridgeError
@@ -57,9 +58,9 @@ def run(*, dry_run: bool, catch_up: bool) -> None:
         ", ".join(cfg.rooms.monitored),
     )
     logger.info(
-        "transition: %dms; day=sunrise, afternoon=sunset, evening=%s, night=%s",
+        "transition: %dms; day=sunrise, afternoon=golden hour, "
+        "evening=nautical dusk, night=%s",
         cfg.transitions.duration_ms,
-        cfg.schedule.evening_local_time.strftime("%-I:%M %p"),
         cfg.schedule.night_local_time.strftime("%-I:%M %p"),
     )
 
@@ -157,9 +158,10 @@ def _do_tick(
     """Run the per-room match check + maybe apply for one trigger."""
     with apply_lock:
         try:
+            learned = scenes_mod.load()
             st = state_mod.load()
         except Exception as e:
-            logger.error("failed to load state file: %s — skipping tick", e)
+            logger.error("failed to load local data files: %s — skipping tick", e)
             return
 
         try:
@@ -176,8 +178,8 @@ def _do_tick(
                         )
                         continue
 
-                    room_state = st.rooms.get(room_name)
-                    if room_state is None or scene not in room_state.scenes:
+                    learned_room = learned.rooms.get(room_name)
+                    if learned_room is None or scene not in learned_room.scenes:
                         logger.info(
                             "%s: SKIP — scene %r not learned for this room",
                             room_name, scene,
@@ -193,7 +195,7 @@ def _do_tick(
                     excluded_ids = excluded_ids_for_room(
                         room_lights, cfg.rooms.excluded.get(room_name, [])
                     )
-                    managed_scenes = filter_scenes(room_state.scenes, excluded_ids)
+                    managed_scenes = filter_scenes(learned_room.scenes, excluded_ids)
                     if not managed_scenes.get(scene):
                         logger.info(
                             "%s: SKIP — every light in this room is excluded",
@@ -237,7 +239,7 @@ def _do_tick(
                         bridge=bridge,
                         room=r,
                         scene_name=scene,
-                        scene_snap=room_state.scenes[scene],
+                        scene_snap=learned_room.scenes[scene],
                         transition_ms=cfg.transitions.duration_ms,
                         state=st,
                         cfg=cfg,

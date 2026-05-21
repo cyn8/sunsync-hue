@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from sunsync_hue import config as cfg_mod
+from sunsync_hue import scenes as scenes_mod
 from sunsync_hue import state as state_mod
 from sunsync_hue.apply import apply_scene_to_room
 from sunsync_hue.bridge import BridgeClient, BridgeError, Room
@@ -116,9 +117,10 @@ class ComingHomeCoordinator:
 
         with self.apply_lock:
             try:
+                learned = scenes_mod.load()
                 st = state_mod.load()
             except Exception as e:
-                logger.error("coming home: failed to load state file: %s", e)
+                logger.error("coming home: failed to load local data files: %s", e)
                 return False
 
             jobs: list[tuple[Room, dict, set[str]]] = []
@@ -171,8 +173,8 @@ class ComingHomeCoordinator:
                             )
                             return False
 
-                        room_state = st.rooms.get(room_name)
-                        if room_state is None or scene not in room_state.scenes:
+                        learned_room = learned.rooms.get(room_name)
+                        if learned_room is None or scene not in learned_room.scenes:
                             logger.info(
                                 "coming home: %s has no learned %r scene; "
                                 "skipping transition",
@@ -182,7 +184,7 @@ class ComingHomeCoordinator:
                             return False
                         scene_snap = {
                             lid: snap
-                            for lid, snap in room_state.scenes[scene].items()
+                            for lid, snap in learned_room.scenes[scene].items()
                             if lid not in excluded_ids
                         }
                         if not scene_snap:

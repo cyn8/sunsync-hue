@@ -10,7 +10,7 @@ from typing import Any
 
 from sunsync_hue.config import state_path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -58,17 +58,11 @@ class LastApplied:
 @dataclass
 class RoomState:
     room_id: str
-    scenes: dict[str, dict[str, LightSnapshot]] = field(default_factory=dict)
-    # scenes: { scene_name: { light_id: LightSnapshot } }
     last_applied: LastApplied | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "room_id": self.room_id,
-            "scenes": {
-                scene: {lid: snap.to_dict() for lid, snap in lights.items()}
-                for scene, lights in self.scenes.items()
-            },
             "last_applied": (
                 self.last_applied.to_dict() if self.last_applied else None
             ),
@@ -76,16 +70,9 @@ class RoomState:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> RoomState:
-        scenes = {
-            scene: {
-                lid: LightSnapshot.from_dict(snap) for lid, snap in lights.items()
-            }
-            for scene, lights in d.get("scenes", {}).items()
-        }
         last = d.get("last_applied")
         return cls(
             room_id=str(d["room_id"]),
-            scenes=scenes,
             last_applied=LastApplied.from_dict(last) if last else None,
         )
 
@@ -103,9 +90,9 @@ class State:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> State:
         version = d.get("schema_version", 1)
-        if version != SCHEMA_VERSION:
+        if version not in (1, SCHEMA_VERSION):
             raise ValueError(
-                f"unsupported state schema version {version} (expected {SCHEMA_VERSION})"
+                f"unsupported state schema version {version} (expected 1 or {SCHEMA_VERSION})"
             )
         rooms = {
             name: RoomState.from_dict(room) for name, room in d.get("rooms", {}).items()

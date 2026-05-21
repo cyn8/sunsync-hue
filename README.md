@@ -30,11 +30,11 @@ python3 ./sunsync-hue.py run
 | Scene | When |
 |---|---|
 | **Day** | sunrise (computed from your latitude/longitude) |
-| **Afternoon** | sunset |
-| **Evening** | 10:00 PM local time (configurable via `evening_local_time`) |
-| **Night** | 1:00 AM the following morning (configurable via `night_local_time`) |
+| **Afternoon** | start of the setting golden hour |
+| **Evening** | nautical dusk |
+| **Night** | 11:30 PM local time (configurable via `night_local_time`) |
 
-Day and Afternoon track the sun. Evening and Night are wall-clock times. If you set `night_local_time` earlier than `evening_local_time` (e.g. the default 1:00 AM vs 10:00 PM), it's interpreted as the next morning so the four scenes always fire in chronological order.
+Day, Afternoon, and Evening track the sun. Night is a wall-clock time. If you set `night_local_time` earlier than nautical dusk, it's interpreted as the next morning so the four scenes always fire in chronological order.
 
 ## How it decides whether to transition a room
 
@@ -124,7 +124,8 @@ LAN and do not expose it to the internet.
 ## Files
 
 - Config: `~/.config/sunsync-hue/config.toml`
-- State (snapshots, last-applied): `~/.local/state/sunsync-hue/state.json`
+- Learned scene snapshots: `~/.local/share/sunsync-hue/scenes.json`
+- Runtime state (last-applied): `~/.local/state/sunsync-hue/state.json`
 
 ## Running as a service
 

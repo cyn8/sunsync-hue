@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from astral import LocationInfo
-from astral.sun import sun
+from astral import Depression, LocationInfo, SunDirection
+from astral.sun import dusk, golden_hour, sun
 
 from sunsync_hue.config import LocationConfig, ScheduleConfig
 
@@ -47,17 +47,17 @@ def compute_events(
     """
     info, tz = _location(location)
 
-    s = sun(info.observer, date=on_date, tzinfo=tz)
-    sunrise = s["sunrise"]
-    sunset = s["sunset"]
-
-    day_at = sunrise
-    afternoon_at = sunset
-    evening_at = datetime.combine(on_date, schedule.evening_local_time, tz)
+    day_at = sun(info.observer, date=on_date, tzinfo=tz)["sunrise"]
+    afternoon_at = golden_hour(
+        info.observer, date=on_date, direction=SunDirection.SETTING, tzinfo=tz
+    )[0]
+    evening_at = dusk(
+        info.observer, date=on_date, depression=Depression.NAUTICAL, tzinfo=tz
+    )
     night_at = datetime.combine(on_date, schedule.night_local_time, tz)
 
-    # If night_local_time is at/before evening (e.g. 01:00 vs 22:00) it belongs
-    # to the next morning, after evening has fired.
+    # If night_local_time is at/before dusk, it belongs to the next morning,
+    # after evening has fired.
     if night_at <= evening_at:
         night_at = night_at + timedelta(days=1)
 

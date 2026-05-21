@@ -6,18 +6,21 @@ from zoneinfo import ZoneInfo
 import typer
 
 from sunsync_hue import config as cfg_mod
+from sunsync_hue import scenes as scenes_mod
 from sunsync_hue import state as state_mod
 from sunsync_hue.daylight import compute_events
 
 
 def run() -> None:
     cfg = cfg_mod.load()
+    scenes = scenes_mod.load()
     st = state_mod.load()
     tz = ZoneInfo(cfg.location.timezone)
     now = datetime.now(tz=tz)
 
     typer.secho("Configuration", bold=True)
     typer.echo(f"  config:   {cfg_mod.config_path()}")
+    typer.echo(f"  scenes:   {scenes_mod.learned_scenes_path()}")
     typer.echo(f"  state:    {state_mod.state_path()}")
     typer.echo(f"  bridge:   {cfg.bridge.ip}")
     typer.echo(
@@ -33,8 +36,8 @@ def run() -> None:
     )
     typer.echo(f"  webhook:  {webhook}")
     typer.echo(
-        f"  schedule: day at sunrise, afternoon at sunset, "
-        f"evening {cfg.schedule.evening_local_time.strftime('%-I:%M %p')}, "
+        f"  schedule: day at sunrise, afternoon at golden hour, "
+        f"evening at nautical dusk, "
         f"night {cfg.schedule.night_local_time.strftime('%-I:%M %p')}"
     )
 
@@ -54,19 +57,20 @@ def run() -> None:
     if not cfg.rooms.monitored:
         typer.echo("  (none — run `sunsync-hue learn`)")
     for room_name in cfg.rooms.monitored:
-        rs = st.rooms.get(room_name)
-        if rs is None:
+        learned_room = scenes.rooms.get(room_name)
+        if learned_room is None:
             typer.echo(f"  {room_name}: no scenes learned")
             continue
-        scenes = ", ".join(sorted(rs.scenes.keys()))
+        scene_names = ", ".join(sorted(learned_room.scenes.keys()))
+        rs = st.rooms.get(room_name)
         last = (
             f"{rs.last_applied.scene} at "
             f"{rs.last_applied.at.astimezone(tz).strftime('%Y-%m-%d %-I:%M:%S %p %Z')}"
-            if rs.last_applied
+            if rs and rs.last_applied
             else "never"
         )
         typer.echo(f"  {room_name}")
-        typer.echo(f"    scenes:       {scenes or '(none)'}")
+        typer.echo(f"    scenes:       {scene_names or '(none)'}")
         typer.echo(f"    last applied: {last}")
         excluded = cfg.rooms.excluded.get(room_name) or []
         if excluded:

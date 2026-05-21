@@ -5,7 +5,7 @@ import logging
 import typer
 
 from sunsync_hue import config as cfg_mod
-from sunsync_hue import state as state_mod
+from sunsync_hue import scenes as scenes_mod
 from sunsync_hue.bridge import BridgeClient
 from sunsync_hue.exclusion import excluded_ids_for_room, filter_scenes
 from sunsync_hue.matcher import room_matches_any_scene
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def run() -> None:
     cfg = cfg_mod.load()
-    st = state_mod.load()
+    scenes = scenes_mod.load()
 
     if not cfg.rooms.monitored:
         typer.echo("No rooms monitored. Run `sunsync-hue learn` first.")
@@ -33,8 +33,8 @@ def run() -> None:
                 )
                 continue
 
-            room_state = st.rooms.get(room_name)
-            if room_state is None or not room_state.scenes:
+            learned_room = scenes.rooms.get(room_name)
+            if learned_room is None or not learned_room.scenes:
                 typer.secho(
                     f"  {room_name}: SKIP — no scenes learned", fg=typer.colors.YELLOW
                 )
@@ -48,7 +48,7 @@ def run() -> None:
                 lid: snap for lid, snap in snapshot_room(room_lights).items()
                 if lid not in excluded_ids
             }
-            managed_scenes = filter_scenes(room_state.scenes, excluded_ids)
+            managed_scenes = filter_scenes(learned_room.scenes, excluded_ids)
             if not any(managed_scenes.values()):
                 typer.secho(
                     f"  {room_name}: SKIP — every light in this room is excluded",

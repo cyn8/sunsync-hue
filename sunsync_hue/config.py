@@ -22,6 +22,11 @@ def state_path() -> Path:
     return Path(base) / APP_DIR / "state.json"
 
 
+def learned_scenes_path() -> Path:
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return Path(base) / APP_DIR / "scenes.json"
+
+
 class ConfigError(ValueError):
     pass
 
@@ -47,10 +52,11 @@ class TransitionConfig:
 
 @dataclass
 class ScheduleConfig:
+    # Deprecated: accepted and rendered for existing config compatibility, but
+    # Evening now follows nautical dusk.
     evening_local_time: time = time(22, 0)
-    # Treated as next-day if it falls at-or-before evening_local_time
-    # (e.g. 01:00 means 01:00 the following morning).
-    night_local_time: time = time(1, 0)
+    # Treated as next-day if it falls at-or-before nautical dusk.
+    night_local_time: time = time(23, 30)
 
 
 @dataclass
@@ -135,7 +141,7 @@ def parse(raw: dict) -> Config:
             sched_t.get("evening_local_time", "22:00"), "schedule"
         ),
         night_local_time=_parse_time_str(
-            sched_t.get("night_local_time", "01:00"), "schedule"
+            sched_t.get("night_local_time", "23:30"), "schedule"
         ),
     )
 

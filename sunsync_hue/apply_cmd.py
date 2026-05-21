@@ -5,6 +5,7 @@ import logging
 import typer
 
 from sunsync_hue import config as cfg_mod
+from sunsync_hue import scenes as scenes_mod
 from sunsync_hue import state as state_mod
 from sunsync_hue.apply import apply_scene_to_room
 from sunsync_hue.bridge import BridgeClient
@@ -26,6 +27,7 @@ def run(scene: str, room: str | None, force: bool, dry_run: bool) -> None:
         raise typer.Exit(code=1)
 
     cfg = cfg_mod.load()
+    scenes = scenes_mod.load()
     st = state_mod.load()
 
     target_rooms: list[str]
@@ -57,8 +59,8 @@ def run(scene: str, room: str | None, force: bool, dry_run: bool) -> None:
                 )
                 continue
 
-            room_state = st.rooms.get(room_name)
-            if room_state is None or scene not in room_state.scenes:
+            learned_room = scenes.rooms.get(room_name)
+            if learned_room is None or scene not in learned_room.scenes:
                 typer.secho(
                     f"  {room_name}: scene {scene!r} not learned — skipping",
                     fg=typer.colors.YELLOW,
@@ -69,7 +71,7 @@ def run(scene: str, room: str | None, force: bool, dry_run: bool) -> None:
             excluded_ids = excluded_ids_for_room(
                 room_lights, cfg.rooms.excluded.get(room_name, [])
             )
-            managed_scenes = filter_scenes(room_state.scenes, excluded_ids)
+            managed_scenes = filter_scenes(learned_room.scenes, excluded_ids)
             if not managed_scenes.get(scene):
                 typer.secho(
                     f"  {room_name}: SKIP — every light in this room is excluded",
@@ -110,7 +112,7 @@ def run(scene: str, room: str | None, force: bool, dry_run: bool) -> None:
                 bridge=bridge,
                 room=r,
                 scene_name=scene,
-                scene_snap=room_state.scenes[scene],
+                scene_snap=learned_room.scenes[scene],
                 transition_ms=cfg.transitions.duration_ms,
                 state=st,
                 cfg=cfg,

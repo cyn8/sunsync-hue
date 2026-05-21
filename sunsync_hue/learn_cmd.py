@@ -7,6 +7,7 @@ import questionary
 import typer
 
 from sunsync_hue import config as cfg_mod
+from sunsync_hue import scenes as scenes_mod
 from sunsync_hue import state as state_mod
 from sunsync_hue.bridge import BridgeClient, Room
 from sunsync_hue.config import SCENE_NAMES
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 def run(room: str | None = None, scene: str | None = None) -> None:
     cfg = cfg_mod.load()
+    learned = scenes_mod.load()
     st = state_mod.load()
     scene_names = _selected_scenes(scene)
     if scene_names is not None and room is None:
@@ -46,7 +48,9 @@ def run(room: str | None = None, scene: str | None = None) -> None:
         room_by_name: dict[str, Room] = {r.name: r for r in rooms_with_lights}
 
         if room is not None:
-            _learn_single(room, bridge, room_by_name, rooms, cfg, st, scene_names)
+            _learn_single(
+                room, bridge, room_by_name, rooms, cfg, learned, st, scene_names
+            )
             return
 
         # 1. Pick rooms to monitor (prefill from current config)
@@ -68,17 +72,21 @@ def run(room: str | None = None, scene: str | None = None) -> None:
 
         # 2. For each room x scene, capture state.
         for room_name in selected:
-            _learn_one_room(bridge, room_by_name[room_name], cfg, st, scene_names)
+            _learn_one_room(bridge, room_by_name[room_name], cfg, learned, scene_names)
 
         # 3. Drop any previously-monitored rooms the user deselected.
-        for known in list(st.rooms.keys()):
+        for known in list(learned.rooms.keys()):
             if known not in selected:
                 typer.echo(f"Removing previously-monitored room: {known}")
+                del learned.rooms[known]
+        for known in list(st.rooms.keys()):
+            if known not in selected:
                 del st.rooms[known]
 
     # 4. Persist.
     cfg.rooms.monitored = list(selected)
     cfg_mod.save(cfg)
+    scenes_mod.save(learned)
     state_mod.save(st)
     typer.secho(
         f"\nDone. Monitoring {len(selected)} room(s). "
@@ -107,6 +115,7 @@ def _learn_single(
     room_by_name: dict[str, Room],
     all_rooms: list[Room],
     cfg: cfg_mod.Config,
+    learned: scenes_mod.LearnedScenes,
     st: state_mod.State,
     scene_names: tuple[str, ...] | None,
 ) -> None:
@@ -138,12 +147,13 @@ def _learn_single(
             raise typer.Exit(code=0)
         newly_monitored = True
 
-    _learn_one_room(bridge, room_by_name[room_name], cfg, st, scene_names)
+    _learn_one_room(bridge, room_by_name[room_name], cfg, learned, scene_names)
 
     if newly_monitored:
         cfg.rooms.monitored.append(room_name)
 
     cfg_mod.save(cfg)
+    scenes_mod.save(learned)
     state_mod.save(st)
     detail = f" {scene_names[0]} for" if scene_names is not None else ""
     typer.secho(
@@ -157,7 +167,7 @@ def _learn_one_room(
     bridge: BridgeClient,
     room: Room,
     cfg: cfg_mod.Config,
-    st: state_mod.State,
+    learned: scenes_mod.LearnedScenes,
     scene_names: tuple[str, ...] | None = None,
 ) -> None:
     """Run the per-room flow and write state."""
@@ -199,7 +209,7 @@ def _learn_one_room(
         if new_excluded:
             typer.echo(f"  keeping excluded lights: {', '.join(new_excluded)}")
 
-    existing = st.rooms.get(room_name)
+    existing = learned.rooms.get(room_name)
     scenes_so_far = (
         dict(existing.scenes) if existing and existing.scenes else {}
     )
@@ -232,8 +242,7 @@ def _learn_one_room(
             fg=typer.colors.GREEN,
         )
 
-    st.rooms[room_name] = state_mod.RoomState(
+    learned.rooms[room_name] = scenes_mod.LearnedRoom(
         room_id=room.id,
         scenes=scenes_so_far,
-        last_applied=existing.last_applied if existing else None,
     )

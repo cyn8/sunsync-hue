@@ -10,4 +10,5 @@ env/
 
 # Local config (contains bridge app key)
 config.toml
+scenes.json
 state.json
