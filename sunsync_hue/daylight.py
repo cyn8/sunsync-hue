@@ -47,13 +47,16 @@ def compute_events(
     """
     info, tz = _location(location)
 
-    day_at = sun(info.observer, date=on_date, tzinfo=tz)["sunrise"]
+    offsets = schedule.sun_offsets
+    day_at = sun(info.observer, date=on_date, tzinfo=tz)["sunrise"] + timedelta(
+        minutes=offsets.day
+    )
     afternoon_at = golden_hour(
         info.observer, date=on_date, direction=SunDirection.SETTING, tzinfo=tz
-    )[0]
+    )[0] + timedelta(minutes=offsets.afternoon)
     evening_at = dusk(
         info.observer, date=on_date, depression=Depression.NAUTICAL, tzinfo=tz
-    )
+    ) + timedelta(minutes=offsets.evening)
     night_at = datetime.combine(on_date, schedule.night_local_time, tz)
 
     # If night_local_time is at/before dusk, it belongs to the next morning,

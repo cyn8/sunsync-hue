@@ -51,12 +51,20 @@ class TransitionConfig:
 
 
 @dataclass
+class SunOffsetsConfig:
+    day: int = 0
+    afternoon: int = 0
+    evening: int = 0
+
+
+@dataclass
 class ScheduleConfig:
     # Deprecated: accepted and rendered for existing config compatibility, but
     # Evening now follows nautical dusk.
     evening_local_time: time = time(22, 0)
     # Treated as next-day if it falls at-or-before nautical dusk.
     night_local_time: time = time(23, 30)
+    sun_offsets: SunOffsetsConfig = field(default_factory=SunOffsetsConfig)
 
 
 @dataclass
@@ -115,6 +123,12 @@ def _parse_time_str(value: str, where: str) -> time:
         ) from e
 
 
+def _parse_offset_minutes(value: object, where: str) -> int:
+    if type(value) is not int:
+        raise ConfigError(f"invalid offset in [{where}] — expected integer minutes")
+    return value
+
+
 def parse(raw: dict) -> Config:
     bridge_t = raw.get("bridge", {})
     bridge = BridgeConfig(
@@ -136,6 +150,18 @@ def parse(raw: dict) -> Config:
     )
 
     sched_t = raw.get("schedule", {})
+    sun_offsets_t = sched_t.get("sun_offsets", {})
+    if not isinstance(sun_offsets_t, dict):
+        raise ConfigError("[schedule.sun_offsets] must be a table")
+    sun_offsets = SunOffsetsConfig(
+        day=_parse_offset_minutes(sun_offsets_t.get("day", 0), "schedule.sun_offsets"),
+        afternoon=_parse_offset_minutes(
+            sun_offsets_t.get("afternoon", 0), "schedule.sun_offsets"
+        ),
+        evening=_parse_offset_minutes(
+            sun_offsets_t.get("evening", 0), "schedule.sun_offsets"
+        ),
+    )
     schedule = ScheduleConfig(
         evening_local_time=_parse_time_str(
             sched_t.get("evening_local_time", "22:00"), "schedule"
@@ -143,6 +169,7 @@ def parse(raw: dict) -> Config:
         night_local_time=_parse_time_str(
             sched_t.get("night_local_time", "23:30"), "schedule"
         ),
+        sun_offsets=sun_offsets,
     )
 
     match_t = raw.get("matching", {})
@@ -237,6 +264,11 @@ def render(cfg: Config) -> str:
     nlt = cfg.schedule.night_local_time
     lines.append(f'evening_local_time = "{elt.hour:02d}:{elt.minute:02d}"')
     lines.append(f'night_local_time = "{nlt.hour:02d}:{nlt.minute:02d}"')
+    lines.append("")
+    lines.append("[schedule.sun_offsets]")
+    lines.append(f"day = {cfg.schedule.sun_offsets.day}")
+    lines.append(f"afternoon = {cfg.schedule.sun_offsets.afternoon}")
+    lines.append(f"evening = {cfg.schedule.sun_offsets.evening}")
     lines.append("")
     lines.append("[matching]")
     lines.append(f"brightness_tolerance = {cfg.matching.brightness_tolerance}")

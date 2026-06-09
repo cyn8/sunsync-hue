@@ -57,10 +57,14 @@ def run(*, dry_run: bool, catch_up: bool) -> None:
         len(cfg.rooms.monitored),
         ", ".join(cfg.rooms.monitored),
     )
+    offsets = cfg.schedule.sun_offsets
     logger.info(
-        "transition: %dms; day=sunrise, afternoon=golden hour, "
-        "evening=nautical dusk, night=%s",
+        "transition: %dms; day=sunrise%s, afternoon=golden hour%s, "
+        "evening=nautical dusk%s, night=%s",
         cfg.transitions.duration_ms,
+        _offset_suffix(offsets.day),
+        _offset_suffix(offsets.afternoon),
+        _offset_suffix(offsets.evening),
         cfg.schedule.night_local_time.strftime("%-I:%M %p"),
     )
 
@@ -277,3 +281,10 @@ def _human_duration(seconds: float) -> str:
     if m:
         return f"{m}m{s:02d}s"
     return f"{s}s"
+
+
+def _offset_suffix(minutes: int) -> str:
+    if minutes == 0:
+        return ""
+    sign = "+" if minutes > 0 else ""
+    return f" ({sign}{minutes}m)"

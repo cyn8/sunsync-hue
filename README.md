@@ -36,6 +36,19 @@ python3 ./sunsync-hue.py run
 
 Day, Afternoon, and Evening track the sun. Night is a wall-clock time. If you set `night_local_time` earlier than nautical dusk, it's interpreted as the next morning so the four scenes always fire in chronological order.
 
+Sun-controlled scenes can be shifted by signed minute offsets in
+`config.toml`:
+
+```toml
+[schedule.sun_offsets]
+day = 0
+afternoon = +20
+evening = -10
+```
+
+For example, if Afternoon's base event is 4:00 PM and `afternoon = +20`, the
+Afternoon trigger fires at 4:20 PM.
+
 ## How it decides whether to transition a room
 
 At each scheduled trigger, for each monitored room:
